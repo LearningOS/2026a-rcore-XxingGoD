@@ -23,6 +23,9 @@ pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
 
+// Number of syscall counters for each task.
+const SYSCALL_COUNT_LEN: usize = 411;
+
 /// The task manager, where all the tasks are managed.
 ///
 /// Functions implemented on `TaskManager` deals with all task state transitions
@@ -45,6 +48,8 @@ pub struct TaskManagerInner {
     tasks: [TaskControlBlock; MAX_APP_NUM],
     /// id of current `Running` task
     current_task: usize,
+    // Per-task syscall counters
+    syscall_counts: [[usize; SYSCALL_COUNT_LEN]; MAX_APP_NUM],
 }
 
 lazy_static! {
@@ -65,6 +70,7 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    syscall_counts: [[0; SYSCALL_COUNT_LEN]; MAX_APP_NUM],
                 })
             },
         }
@@ -135,6 +141,27 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+}
+
+/// Record a syscall made by the current task.
+pub fn record_syscall(syscall_id: usize) {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task;
+
+    if let Some(count) = inner.syscall_counts[current].get_mut(syscall_id) {
+        *count += 1;
+    }
+}
+
+/// Return the current task's count for a syscall.
+pub fn get_syscall_count(syscall_id: usize) -> usize {
+    let inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task;
+
+    inner.syscall_counts[current]
+        .get(syscall_id)
+        .copied()
+        .unwrap_or(0)
 }
 
 /// Run the first task in task list.
