@@ -9,7 +9,7 @@ pub struct TaskManager {
     ready_queue: VecDeque<Arc<TaskControlBlock>>,
 }
 
-/// A simple FIFO scheduler.
+/// Stride scheduler; a linear scan preserves queue order on equal service.
 impl TaskManager {
     ///Creat an empty TaskManager
     pub fn new() -> Self {
@@ -23,7 +23,22 @@ impl TaskManager {
     }
     /// Take a process out of the ready queue
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
-        self.ready_queue.pop_front()
+        // Specification: rCore Guide chapter5/4exercise.html.
+        let mut best = 0;
+        let mut stride = self.ready_queue.front()?.inner_exclusive_access().stride;
+        for (index, task) in self.ready_queue.iter().enumerate().skip(1) {
+            let candidate = task.inner_exclusive_access().stride;
+            if (candidate.wrapping_sub(stride) as i64) < 0 {
+                best = index;
+                stride = candidate;
+            }
+        }
+        let task = self.ready_queue.remove(best).unwrap();
+        {
+            let mut inner = task.inner_exclusive_access();
+            inner.stride = inner.stride.wrapping_add((1u64 << 63) / inner.priority as u64);
+        }
+        Some(task)
     }
 }
 
