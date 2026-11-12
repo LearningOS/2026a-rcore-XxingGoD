@@ -14,6 +14,7 @@ pub struct Inode {
     block_device: Arc<dyn BlockDevice>,
 }
 
+mod links;
 impl Inode {
     /// Create a vfs inode
     pub fn new(
@@ -43,6 +44,7 @@ impl Inode {
     }
     /// Find inode under a disk inode by name
     fn find_inode_id(&self, name: &str, disk_inode: &DiskInode) -> Option<u32> {
+        if name.is_empty() { return None; }
         // assert it is a directory
         assert!(disk_inode.is_dir());
         let file_count = (disk_inode.size as usize) / DIRENT_SZ;
@@ -92,6 +94,7 @@ impl Inode {
     }
     /// Create inode under current inode by name
     pub fn create(&self, name: &str) -> Option<Arc<Inode>> {
+        if name.is_empty() || name.len() > 27 || name.contains('/') { return None; }
         let mut fs = self.fs.lock();
         let op = |root_inode: &DiskInode| {
             // assert it is a directory
@@ -112,20 +115,7 @@ impl Inode {
             .modify(new_inode_block_offset, |new_inode: &mut DiskInode| {
                 new_inode.initialize(DiskInodeType::File);
             });
-        self.modify_disk_inode(|root_inode| {
-            // append file in the dirent
-            let file_count = (root_inode.size as usize) / DIRENT_SZ;
-            let new_size = (file_count + 1) * DIRENT_SZ;
-            // increase size
-            self.increase_size(new_size as u32, root_inode, &mut fs);
-            // write dirent
-            let dirent = DirEntry::new(name, new_inode_id);
-            root_inode.write_at(
-                file_count * DIRENT_SZ,
-                dirent.as_bytes(),
-                &self.block_device,
-            );
-        });
+        self.insert_dirent(name, new_inode_id, &mut fs);
 
         let (block_id, block_offset) = fs.get_disk_inode_pos(new_inode_id);
         block_cache_sync_all();
@@ -150,7 +140,7 @@ impl Inode {
                     disk_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device,),
                     DIRENT_SZ,
                 );
-                v.push(String::from(dirent.name()));
+                if !dirent.name().is_empty() { v.push(String::from(dirent.name())); }
             }
             v
         })

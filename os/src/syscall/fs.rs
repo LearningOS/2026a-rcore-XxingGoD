@@ -75,29 +75,36 @@ pub fn sys_close(fd: usize) -> isize {
     0
 }
 
-/// YOUR JOB: Implement fstat.
-pub fn sys_fstat(_fd: usize, _st: *mut Stat) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_fstat NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+// Specification: rCore Guide chapter6/4exercise.html.
+/// Copy a descriptor's initialized Stat fields through checked user pages.
+pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
+    let task = current_task().unwrap();
+    let file = {
+        let inner = task.inner_exclusive_access();
+        match inner.fd_table.get(fd).and_then(|slot| slot.as_ref()) {
+            Some(file) => file.clone(),
+            None => return -1,
+        }
+    };
+    let stat = match file.stat() { Some(stat) => stat, None => return -1 };
+    let mut bytes = [0u8; core::mem::size_of::<Stat>()];
+    bytes[0..8].copy_from_slice(&stat.dev.to_ne_bytes());
+    bytes[8..16].copy_from_slice(&stat.ino.to_ne_bytes());
+    bytes[16..20].copy_from_slice(&stat.mode.bits().to_ne_bytes());
+    bytes[20..24].copy_from_slice(&stat.nlink.to_ne_bytes());
+    if crate::mm::copy_to_user(current_user_token(), st as usize, &bytes) { 0 } else { -1 }
 }
 
-/// YOUR JOB: Implement linkat.
-pub fn sys_linkat(_old_name: *const u8, _new_name: *const u8) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_linkat NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+/// Create a hard link to an existing file.
+pub fn sys_linkat(old_name: *const u8, new_name: *const u8) -> isize {
+    let token = current_user_token();
+    let old = translated_str(token, old_name);
+    let new = translated_str(token, new_name);
+    if crate::fs::link_file(&old, &new) { 0 } else { -1 }
 }
 
-/// YOUR JOB: Implement unlinkat.
-pub fn sys_unlinkat(_name: *const u8) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_unlinkat NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+/// Remove a directory name and eventually reclaim its inode.
+pub fn sys_unlinkat(name: *const u8) -> isize {
+    let name = translated_str(current_user_token(), name);
+    if crate::fs::unlink_file(&name) { 0 } else { -1 }
 }

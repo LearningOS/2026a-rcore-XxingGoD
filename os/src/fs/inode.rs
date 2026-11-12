@@ -4,10 +4,11 @@
 //!
 //! `UPSafeCell<OSInodeInner>` -> `OSInode`: for static `ROOT_INODE`,we
 //! need to wrap `OSInodeInner` into `UPSafeCell`
-use super::File;
+use super::{File, Stat, StatMode};
 use crate::drivers::BLOCK_DEVICE;
 use crate::mm::UserBuffer;
 use crate::sync::UPSafeCell;
+use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::*;
@@ -31,6 +32,8 @@ pub struct OSInodeInner {
 impl OSInode {
     /// create a new inode in memory
     pub fn new(readable: bool, writable: bool, inode: Arc<Inode>) -> Self {
+        let ino = inode.metadata().0;
+        *OPEN_COUNTS.exclusive_access().entry(ino).or_insert(0) += 1;
         Self {
             readable,
             writable,
@@ -55,7 +58,36 @@ impl OSInode {
     }
 }
 
+// Track open descriptions separately from persistent hard links.
+impl Drop for OSInode {
+    fn drop(&mut self) {
+        let inode = self.inner.exclusive_access().inode.clone();
+        let (ino, links, _) = inode.metadata();
+        let last = {
+            let mut counts = OPEN_COUNTS.exclusive_access();
+            let count = counts.get_mut(&ino).unwrap();
+            *count -= 1;
+            if *count == 0 { counts.remove(&ino); true } else { false }
+        };
+        if last && links == 0 { inode.reclaim(); }
+    }
+}
+
+/// Create a second persistent directory entry for a file.
+pub fn link_file(old: &str, new: &str) -> bool { ROOT_INODE.link(old, new) }
+
+/// Remove a name while preserving open-file lifetime semantics.
+pub fn unlink_file(name: &str) -> bool {
+    if let Some(inode) = ROOT_INODE.unlink(name) {
+        let (ino, links, _) = inode.metadata();
+        let open = OPEN_COUNTS.exclusive_access().get(&ino).copied().unwrap_or(0);
+        if links == 0 && open == 0 { inode.reclaim(); }
+        true
+    } else { false }
+}
+
 lazy_static! {
+    static ref OPEN_COUNTS: UPSafeCell<BTreeMap<u64, usize>> = unsafe { UPSafeCell::new(BTreeMap::new()) };
     pub static ref ROOT_INODE: Arc<Inode> = {
         let efs = EasyFileSystem::open(BLOCK_DEVICE.clone());
         Arc::new(EasyFileSystem::root_inode(&efs))
@@ -126,6 +158,10 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
 }
 
 impl File for OSInode {
+    fn stat(&self) -> Option<Stat> {
+        let (ino, nlink, dir) = self.inner.exclusive_access().inode.metadata();
+        Some(Stat { dev: 0, ino, mode: if dir { StatMode::DIR } else { StatMode::FILE }, nlink, pad: [0; 7] })
+    }
     fn readable(&self) -> bool {
         self.readable
     }

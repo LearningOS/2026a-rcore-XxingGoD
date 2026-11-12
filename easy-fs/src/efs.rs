@@ -121,6 +121,11 @@ impl EasyFileSystem {
             (inode_id % inodes_per_block) as usize * inode_size,
         )
     }
+    /// Reverse the stable disk-inode position to its bitmap number.
+    pub fn get_disk_inode_id(&self, block: u32, offset: usize) -> u32 {
+        let size = core::mem::size_of::<DiskInode>();
+        (block - self.inode_area_start_block) * (BLOCK_SZ / size) as u32 + (offset / size) as u32
+    }
     /// Get data block by id
     pub fn get_data_block_id(&self, data_block_id: u32) -> u32 {
         self.data_area_start_block + data_block_id

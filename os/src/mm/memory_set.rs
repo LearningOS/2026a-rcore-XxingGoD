@@ -42,6 +42,7 @@ pub struct MemorySet {
     areas: Vec<MapArea>,
 }
 
+mod anonymous;
 impl MemorySet {
     /// Create a new empty `MemorySet`.
     pub fn new_bare() -> Self {
