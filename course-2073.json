@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "courseId": 2073,
+  "repository": "LearningOS/2026a-rcore-XxingGoD",
+  "user": "XxingGoD",
+  "totalScore": 500,
+  "chapters": {
+    "ch4": {
+      "points": "16/16",
+      "score": 100,
+      "commit": "af6ebfd71f628583c64995f55c641678ee2e1c48"
+    }
+  },
+  "score": 100,
+  "upload": {
+    "status": "pending",
+    "runId": "43160834211",
+    "runAttempt": "1"
+  }
+}
