@@ -22,31 +22,39 @@ pub fn sys_yield() -> isize {
     0
 }
 
-/// YOUR JOB: get time with second and microsecond
-/// HINT: You might reimplement it with virtual memory management.
-/// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    trace!("kernel: sys_get_time");
-    -1
+// Specification: rCore Guide chapter4/7exercise.html.
+/// Return time through checked, possibly non-contiguous user pages.
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
+    let us = crate::timer::get_time_us();
+    let mut bytes = [0u8; core::mem::size_of::<TimeVal>()];
+    bytes[..8].copy_from_slice(&(us / 1_000_000).to_ne_bytes());
+    bytes[8..].copy_from_slice(&(us % 1_000_000).to_ne_bytes());
+    if crate::mm::copy_to_user(crate::task::current_user_token(), ts as usize, &bytes) { 0 } else { -1 }
 }
 
-/// TODO: Finish sys_trace to pass testcases
-/// HINT: You might reimplement it with virtual memory management.
-pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
-    trace!("kernel: sys_trace");
-    -1
+/// Trace this task's memory or syscall history.
+pub fn sys_trace(request: usize, id: usize, data: usize) -> isize {
+    match request {
+        0 | 1 => {
+            match crate::mm::user_byte(crate::task::current_user_token(), id, request == 1) {
+                Some(pa) if request == 0 => unsafe { (pa.0 as *const u8).read() as isize },
+                Some(pa) => { unsafe { (pa.0 as *mut u8).write(data as u8); } 0 }
+                None => -1,
+            }
+        }
+        2 => crate::task::get_syscall_count(id) as isize,
+        _ => -1,
+    }
 }
 
-// YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    -1
+/// Map anonymous user memory.
+pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
+    crate::task::mmap(start, len, prot)
 }
 
-// YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    -1
+/// Remove user memory mappings.
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    crate::task::munmap(start, len)
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {

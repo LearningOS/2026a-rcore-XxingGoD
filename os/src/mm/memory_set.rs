@@ -51,6 +51,81 @@ impl MemorySet {
     pub fn token(&self) -> usize {
         self.page_table.token()
     }
+    // Specification: rCore Guide chapter4/7exercise.html.
+    /// Map anonymous user pages after validating the complete range.
+    pub fn mmap(&mut self, start: usize, len: usize, prot: usize) -> isize {
+        if start % PAGE_SIZE != 0 || prot == 0 || prot & !7 != 0 {
+            return -1;
+        }
+        let end = match start.checked_add(len).and_then(|n| n.checked_add(PAGE_SIZE - 1)) {
+            Some(n) if n < (1usize << 38) => n / PAGE_SIZE * PAGE_SIZE,
+            _ => return -1,
+        };
+        let range = VPNRange::new(VirtAddr::from(start).floor(), VirtAddr::from(end).floor());
+        if range.into_iter().any(|vpn| self.page_table.translate(vpn).map_or(false, |pte| pte.is_valid())) {
+            return -1;
+        }
+        if len == 0 { return 0; }
+        let permission = MapPermission::from_bits((prot as u8) << 1).unwrap() | MapPermission::U;
+        let mut area = MapArea::new(start.into(), end.into(), MapType::Framed, permission);
+        for vpn in range {
+            let frame = match frame_alloc() {
+                Some(frame) => frame,
+                None => {
+                    for mapped in area.data_frames.keys() { self.page_table.unmap(*mapped); }
+                    return -1;
+                }
+            };
+            if !self.page_table.try_map(vpn, frame.ppn, PTEFlags::from_bits(permission.bits).unwrap()) {
+                for mapped in area.data_frames.keys() { self.page_table.unmap(*mapped); }
+                return -1;
+            }
+            area.data_frames.insert(vpn, frame);
+        }
+        self.areas.push(area);
+        0
+    }
+
+    /// Unmap a validated user interval, retaining both sides of split areas.
+    pub fn munmap(&mut self, start: usize, len: usize) -> isize {
+        if start % PAGE_SIZE != 0 { return -1; }
+        let end = match start.checked_add(len).and_then(|n| n.checked_add(PAGE_SIZE - 1)) {
+            Some(n) if n < (1usize << 38) => n / PAGE_SIZE * PAGE_SIZE,
+            _ => return -1,
+        };
+        let first = VirtAddr::from(start).floor();
+        let last = VirtAddr::from(end).floor();
+        if VPNRange::new(first, last).into_iter().any(|vpn| {
+            self.page_table.translate(vpn).map_or(true, |pte| !pte.is_valid() || !pte.flags().contains(PTEFlags::U))
+        }) { return -1; }
+        if len == 0 { return 0; }
+        let mut i = 0;
+        while i < self.areas.len() {
+            let lo = self.areas[i].vpn_range.get_start();
+            let hi = self.areas[i].vpn_range.get_end();
+            if lo >= last || hi <= first { i += 1; continue; }
+            let cut_lo = lo.max(first);
+            let cut_hi = hi.min(last);
+            let mut area = self.areas.remove(i);
+            if cut_hi < hi {
+                let right = MapArea {
+                    vpn_range: VPNRange::new(cut_hi, hi),
+                    data_frames: area.data_frames.split_off(&cut_hi),
+                    map_type: area.map_type,
+                    map_perm: area.map_perm,
+                };
+                self.areas.insert(i, right);
+                i += 1;
+            }
+            for vpn in VPNRange::new(cut_lo, cut_hi) { area.unmap_one(&mut self.page_table, vpn); }
+            if lo < cut_lo {
+                area.vpn_range = VPNRange::new(lo, cut_lo);
+                self.areas.insert(i, area);
+                i += 1;
+            }
+        }
+        0
+    }
     /// Assume that no conflicts.
     pub fn insert_framed_area(
         &mut self,
