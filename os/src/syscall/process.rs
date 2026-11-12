@@ -146,17 +146,14 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
     }
 }
 
-/// get_time syscall
-///
-/// YOUR JOB: get time with second and microsecond
-/// HINT: You might reimplement it with virtual memory management.
-/// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
-        current_task().unwrap().process.upgrade().unwrap().getpid()
-    );
-    -1
+// rCore Guide chapter8 requires retaining sys_get_time.
+/// Return time using checked cross-page user copies.
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
+    let us = crate::timer::get_time_us();
+    let mut bytes = [0u8; core::mem::size_of::<TimeVal>()];
+    bytes[..8].copy_from_slice(&(us / 1_000_000).to_ne_bytes());
+    bytes[8..].copy_from_slice(&(us % 1_000_000).to_ne_bytes());
+    if crate::mm::copy_to_user(crate::task::current_user_token(), ts as usize, &bytes) { 0 } else { -1 }
 }
 
 /// mmap syscall

@@ -87,6 +87,11 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // here we do not remove the thread since we are still using the kstack
     // it will be deallocated when sys_waittid is called
     drop(task_inner);
+    {
+        let mut inner = process.inner_exclusive_access();
+        inner.deadlock.mutexes.retire(tid);
+        inner.deadlock.semaphores.retire(tid);
+    }
 
     // Move the task to stop-wait status, to avoid kernel stack from being freed
     if tid == 0 {
@@ -160,6 +165,10 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         process_inner.fd_table.clear();
         // remove all tasks
         process_inner.tasks.clear();
+        process_inner.mutex_list.clear();
+        process_inner.semaphore_list.clear();
+        process_inner.condvar_list.clear();
+        process_inner.deadlock = crate::sync::DeadlockState::default();
     }
     drop(process);
     // we do not have to save task context
