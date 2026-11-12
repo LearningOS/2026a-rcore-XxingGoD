@@ -4,6 +4,22 @@
 
 **五项实验：每项 100 分 · 总分：500 分**
 
+## 实验成果与成绩
+
+五项计分实验的远端评测和成绩上传任务均已成功，累计成绩记录为 **500/500**，OpenCamp 接口已确认接收。对应提交、Actions 运行和上传回执见 [成绩同步核验记录](docs/GRADING_VERIFICATION.md)。
+
+`main` 仅汇总实验报告、分支导航和验收记录；各章内核代码保留在各自分支，不将不同章节的源码混合。
+
+| 源码分支 | 实验报告 | 完成内容 |
+| --- | --- | --- |
+| [ch3](/LearningOS/2026a-rcore-XxingGoD/tree/ch3) | [lab1](reports/lab1.md) | sys_trace 与按任务统计系统调用 |
+| [ch4](/LearningOS/2026a-rcore-XxingGoD/tree/ch4) | [lab2](reports/lab2.md) | 地址翻译、权限检查、匿名内存映射 |
+| [ch5](/LearningOS/2026a-rcore-XxingGoD/tree/ch5) | [lab3](reports/lab3.md) | spawn、优先级与 stride 调度 |
+| [ch6](/LearningOS/2026a-rcore-XxingGoD/tree/ch6) | [lab4](reports/lab4.md) | 硬链接、fstat、文件回收及第七章问答 |
+| [ch8](/LearningOS/2026a-rcore-XxingGoD/tree/ch8) | [lab5](reports/lab5.md) | mutex/semaphore 死锁检测 |
+
+以上成绩对应核验记录中的具体提交；后续修改应重新查看对应分支的评测结果。自动报告检查仅验证文件存在，个人交流记录和诚信声明仍需由提交者按课程要求据实确认。
+
 ## 开始实验
 
 1. 加入 [OpenCamp 秋冬季训练营](https://opencamp.cn/os2edu/camp/2026fall)，并绑定自己的 GitHub 账号。
